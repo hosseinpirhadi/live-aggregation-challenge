@@ -1,0 +1,22 @@
+# Use the official Python image from Docker Hub
+FROM python:3.9
+
+# Set environment variables for PostgreSQL connection
+ENV POSTGRES_HOST=postgres
+ENV POSTGRES_PORT=5432
+ENV POSTGRES_DB=data_engineer
+ENV POSTGRES_USER=password
+ENV POSTGRES_PASSWORD=password
+ENV INSERT_INTERVAL=1
+
+# Set the working directory in the container
+WORKDIR /usr/src/app
+
+# Copy the Python script into the container
+COPY ./insert_data.py .
+
+# Install psycopg2-binary package
+RUN pip install psycopg2-binary
+
+# Command to run the Python script
+CMD ["python", "./insert_data.py"]

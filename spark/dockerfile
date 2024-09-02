@@ -1,0 +1,11 @@
+# Use the Confluent Kafka image as the base image
+FROM bitnami/spark:latest
+USER root
+# Install ping
+RUN apt-get update && \
+    apt-get install -y iputils-ping telnet &&\
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Continue with the rest of your Dockerfile if needed
+RUN pip install py4j

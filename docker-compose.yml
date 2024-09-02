@@ -1,0 +1,158 @@
+version: '3'
+services:
+  postgres:
+    image: debezium/postgres:13-alpine
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: password
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: data_engineer
+    ports:
+      - 5432:5432
+    volumes:
+      - ./postgre/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - mynetwork
+
+  zookeeper:
+    image: debezium/zookeeper:2.7.1.Final
+    container_name: zookeeper
+    hostname: zookeeper
+    environment:
+      ZOOKEEPER_SERVER_ID: 1
+    ports:
+      - 2182:2181
+      - 2888:2888
+      - 3888:3888
+    networks:
+      - mynetwork
+
+  kafka:
+    image: debezium/kafka:2.7.1.Final
+    container_name: kafka
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:2181
+      BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+    networks:
+      - mynetwork
+
+  connect:
+    image: debezium/connect:2.7.1.Final
+    container_name: connect
+    hostname: connect
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - 8083:8083
+    environment:
+      GROUP_ID: holding_group
+      CONFIG_STORAGE_TOPIC: holding_storage_topic
+      OFFSET_STORAGE_TOPIC: holding_offset_topic
+      BOOTSTRAP_SERVERS: kafka:9092
+    networks:
+      - mynetwork
+
+  # spark-master:
+  #   # image: bitnami/spark:latest
+  #   build: ./spark
+  #   container_name: spark-master
+  #   hostname: spark-master
+  #   environment:
+  #     - SPARK_MODE=master
+  #     - SPARK_RPC_AUTHENTICATION_ENABLED=no
+  #     - SPARK_RPC_ENCRYPTION_ENABLED=no
+  #     - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+  #     - SPARK_SSL_ENABLED=no
+  #   ports:
+  #     - 7077:7077
+  #     - 8080:8080
+  #   volumes:
+  #     - ./codes:/opt/spark-apps  # Mount the local 'scripts' directory to '/opt/spark-apps' in the container
+  #   networks:
+  #     - mynetwork
+
+  # spark-worker:
+  #   image: bitnami/spark:latest
+  #   # build: .
+  #   container_name: spark-worker
+  #   hostname: spark-worker
+  #   environment:
+  #     - SPARK_MODE=worker
+  #     - SPARK_MASTER_URL=spark://spark-master:7077
+  #     - SPARK_WORKER_MEMORY=1G
+  #     - SPARK_WORKER_CORES=1
+  #   depends_on:
+  #     - spark-master
+  #   ports:
+  #     - 8081:8081
+  #   volumes:
+  #     - ./codes:/opt/spark-apps  # Mount the same 'scripts' directory to ensure workers also have access
+  #   networks:
+  #     - mynetwork
+  
+  clickhouse:
+    image: bitnami/clickhouse:latest
+    container_name: clickhouse
+    hostname: clickhouse
+    environment:
+      CLICKHOUSE_DATABASE: financial
+      # CLICKHOUSE_USER: password
+      # CLICKHOUSE_PASSWORD: password
+    ports:
+      - 8123:8123
+      - 9000:9000  
+    volumes:
+      - ./clickhouse/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    entrypoint: /bin/bash -c "/docker-entrypoint-initdb.d/init.sh"
+    # volumes:
+    #   - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+    # entrypoint: /bin/bash -c "
+    #       /opt/bitnami/scripts/clickhouse/run.sh && 
+    #       sleep 5 && 
+    #       clickhouse-client --host=localhost --multiquery < /docker-entrypoint-initdb.d/init.sql"
+    networks:
+      - mynetwork
+
+  python-app:
+    build: ./python-app
+    container_name: python-app
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: data_engineer
+      POSTGRES_USER: password
+      POSTGRES_PASSWORD: password
+      INSERT_INTERVAL: 10
+    depends_on:
+      - postgres
+      - clickhouse
+    networks:
+      - mynetwork
+
+  wait-for-connect:
+    build: .
+    container_name: wait-for-connect
+    depends_on:
+      - python-app
+      - clickhouse
+      - postgres
+      - kafka
+      - connect
+    volumes:
+      - ./wait-for-it.sh:/wait-for-it.sh
+    entrypoint: bash -c "/debezium-connect.sh"
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    driver: bridge
