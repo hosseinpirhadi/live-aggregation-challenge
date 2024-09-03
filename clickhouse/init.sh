@@ -59,11 +59,12 @@ ENGINE = Kafka(
 );
 
 SET stream_like_engine_allow_direct_select=1;
+SET allow_experimental_live_view=1;
 
 CREATE TABLE raw_data (
     price Nullable(Int32),
     volume Nullable(Int32),
-    datetime_created DateTime
+    datetime_created DateTime('Asia/Tehran')
 ) ENGINE = MergeTree()
 ORDER BY datetime_created;
 
@@ -77,22 +78,16 @@ SELECT
 FROM kafka_data
 WHERE payload.after IS NOT NULL;
 
-CREATE MATERIALIZED VIEW min_max_price_last_hour
-ENGINE = AggregatingMergeTree()
-ORDER BY (hour)
-POPULATE AS
+CREATE LIVE VIEW min_max_price_last_hour AS
 SELECT
     min(price) AS min_price,
     max(price) AS max_price,
     toStartOfHour(datetime_created) AS hour
 FROM raw_data
-WHERE datetime_created >= now() - INTERVAL 1 HOUR
+WHERE datetime_created >= now('Asia/Tehran') - INTERVAL 1 HOUR
 GROUP BY hour;
 
-CREATE MATERIALIZED VIEW open_price_last_hour
-ENGINE = MergeTree()
-ORDER BY (hour, datetime_created)
-POPULATE AS
+CREATE LIVE VIEW open_price_last_hour AS
 SELECT
     price AS open_price,
     toStartOfHour(datetime_created) AS hour,
@@ -102,10 +97,7 @@ WHERE datetime_created >= now() - INTERVAL 1 HOUR
 ORDER BY datetime_created ASC
 LIMIT 1 BY hour;
 
-CREATE MATERIALIZED VIEW close_price_last_hour
-ENGINE = MergeTree()
-ORDER BY (hour, datetime_created)
-POPULATE AS
+CREATE LIVE VIEW close_price_last_hour AS
 SELECT
     price AS close_price,
     toStartOfHour(datetime_created) AS hour,
